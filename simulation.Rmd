@@ -1,0 +1,517 @@
+---
+title: "simulation"
+output:
+  html_document:
+    df_print: paged
+date: "2024-12-23"
+---
+#TODO: insert the avg time in sessin for קצבת נכות
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library("ggplot2")
+library("tidyverse")
+library("readxl")
+library("dplyr")
+library("ggpubr")
+library("writexl")
+library("lubridate")
+library("openxlsx")
+
+options(scipen=999)
+options(digits=3)
+```
+
+
+disabledparkingbadg@mot - תג חנייה לנכה
+rishumtheory@mot - בקשה לרישיון נהיגה
+weaponlicence@mops - כלי ירי פרטי
+t355@btl - דמי לידה
+t7801@btl - קיצבת נכות
+driverapply@police  - טופס פניות נהגים
+
+
+```{r message=TRUE, warning=FALSE, include=FALSE}
+# Imprting data
+#strugles_data <- read_csv("C:\\Users\\elado\\Desktop\\testing.csv")
+
+
+driverapply <- read_excel("C:\\Users\\elado\\Desktop\\Digital_Array\\FLOW_files\\INPUT_MASTER_FLOW.xlsx",
+                          sheet = "טופס פניות נהגים",
+                          skip = 1)
+driverapply$`avg time in flow` <- 
+  
+  
+
+df_long <- driverapply %>%
+  pivot_longer(
+    cols = c(
+      "avg time in flow", "conversion", "slow page", "n_sessions",
+      "back forward", "dead click", "error click", "form zigzag",
+      "long focus time", "rage clicks", "reload"
+    ),
+    names_to = "metric",
+    values_to = "value"
+  )
+
+
+
+birth_sue <- read_excel("C:\\Users\\elado\\Desktop\\Digital_Array\\FLOW_files\\INPUT_MASTER_FLOW.xlsx",
+                          sheet = "תביעה דמי לידה",
+                          skip = 1)
+
+
+
+
+strugles_data <- read_csv("C:\\Users\\elado\\Desktop\\Digital_Array\\FLOW_files\\for_final_flow_data.csv")#,sheet = "for_final_flow_data")
+strugles_data <- subset(strugles_data, formID_ != "t7801@btl") #removing נכות
+strugles_data <- subset(strugles_data, formID_ != "rishumtheory@mot") #removing רישיון נהיגה
+
+#Renaming forms to normal names - V
+strugles_data$formID_[strugles_data$formID_ == "disabledparkingbadg@mot"] <- "תו חניה לנכה"
+strugles_data$formID_[strugles_data$formID_ == "mr19sso@main"] <- "רישום שם הנולד"
+strugles_data$formID_[strugles_data$formID_ == "t355@btl"] <- "תביעה לדמי לידה"
+strugles_data$formID_[strugles_data$formID_ == "weaponlicense@mops"] <- "רישיון נשק"
+strugles_data$formID_[strugles_data$formID_ == "weaponlicence@mops"] <- "רישיון נשק"
+
+#lower casing everything - V
+strugles_data$Struggle_Type <- tolower(strugles_data$Struggle_Type)
+
+
+
+# Convert the values - V
+rows_to_convert <- strugles_data$Struggle_Type == "avg time in flow"
+strugles_data$Count[rows_to_convert] <- sapply(
+  strugles_data$Count[rows_to_convert],
+  function(x) {
+    parts <- strsplit(x, ":")[[1]]
+    as.numeric(parts[1]) * 60 + as.numeric(parts[2])
+  }
+)
+
+# Rename in those rows - V
+strugles_data$Struggle_Type[rows_to_convert] <- "avg time in seconds in flow"
+
+
+# Rename any instance containing "conversion" to "conversion rate"
+#strugles_data$Struggle_Type <- ifelse(
+#  grepl("conversion", strugles_data$Struggle_Type, ignore.case = TRUE),
+#  "conversion rate",
+#  strugles_data$Struggle_Type
+#)
+
+
+# formating columns - V
+strugles_data$formID_ <- as.character(strugles_data$formID_)
+strugles_data$Struggle_Type <- as.character(strugles_data$Struggle_Type)
+strugles_data$Count <- as.numeric(strugles_data$Count)
+strugles_data$week_num <- as.numeric(strugles_data$week_num)
+
+#strugles_data$date <- parse_date_time(strugles_data$date,"%d-%m-%Y")
+
+
+strugles_data$date <- as.Date(format(dmy(strugles_data$date), "%d-%m-%Y"),"%d-%m-%Y")
+strugles_data$week_start_date <- strugles_data$date - as.numeric(format(strugles_data$date, "%w"))
+
+strugles_data$date <- as.Date(strugles_data$date, format = "%Y-%m%-d")
+#strugles_data$date <- format(strugles_data$date, "%d/%m/%Y") #making dd/mm/YYYY 
+
+
+
+typeof(strugles_data$date)
+
+
+strugles_data$week_start_date <- floor_date(strugles_data$date, unit = "week", week_start = 7)
+strugles_data$week_num <- as.numeric(strftime(strugles_data$week_start_date , format = "%U"))
+
+
+
+#Removing unecceray strugles
+# Keeping only needed rows - 
+strugles_data <- subset(strugles_data, strugles_data$Struggle_Type %in% 
+                          c("reload","rage clicks","long focus time","form zig zag","error click","dead click",
+                            "back forward", "slow page","n_sessions","avg time in seconds in flow","conversion rate"))
+
+unique(strugles_data$Struggle_Type)
+
+
+#strugles_data <- subset(strugles_data, Struggle_Type != "avg time in seconds in flow")
+#strugles_data <- subset(strugles_data, strugles_data$Struggle_Type != "Uncompleted Form")
+#strugles_data <- subset(strugles_data, strugles_data$Struggle_Type != "Input Chars Exceeded") 
+#strugles_data <- subset(strugles_data, strugles_data$Struggle_Type != "Blank Page") 
+
+
+
+
+###### Fetching and exporting just the completion time and conversion data.
+completion_time_data <- strugles_data[strugles_data$Struggle_Type=="avg time in seconds in flow", ]
+converstion_data <- strugles_data[strugles_data$Struggle_Type=="conversion rate",]
+total_sessions_perday <- strugles_data[strugles_data$Struggle_Type == "n_sessions",]
+
+#Now removing them from original strugles
+strugles_data <- strugles_data[strugles_data$Struggle_Type !="avg time in seconds in flow", ]
+strugles_data<- strugles_data[strugles_data$Struggle_Type !="conversion rate",]
+strugles_data <- strugles_data[strugles_data$Struggle_Type != "n_sessions",]
+
+#pre-processing
+colnames(completion_time_data)[colnames(completion_time_data) == "Count"] <- "duration"
+completion_time_data$duration <- sprintf("%02d:%02d",
+                                    completion_time_data$duration %/% 60,  # Minutes
+                                    completion_time_data$duration %% 60)   # Seconds
+                                    
+
+
+
+unique(strugles_data$Struggle_Type)
+
+
+
+
+
+
+
+
+
+
+
+
+########################## TOtal sessions perday pre-processing ##################################
+
+#loading 
+#total_sessions_perday <- read_excel("C:\\Users\\elado\\Desktop\\Digital_Array\\FLOW_files\\INPUT_MASTER_FLOW.xlsx", sheet = "total_sessions_perday")
+
+
+# Removing unused (yet) rows.
+                                
+#                                total_sessions_perday[complete.cases(total_sessions_perday), ] #removing NA rows
+#total_sessions_perday <- subset(total_sessions_perday,week_num != "52")
+
+
+
+#Renaming also in sessions data
+#total_sessions_perday$formID_[total_sessions_perday$formID_ == "disabledparkingbadg@mot"] <- "תו חניה לנכה"
+#total_sessions_perday$formID_[total_sessions_perday$formID_ == "rishumtheory@mot"] <- "רישיון נהיגה"
+#total_sessions_perday$formID_[total_sessions_perday$formID_ == "t355@btl"] <- "תביעה לדמי לידה"
+#total_sessions_perday$formID_[total_sessions_perday$formID_ == "weaponlicense@mops"] <- "רישיון נשק"
+#total_sessions_perday$formID_[total_sessions_perday$formID_ == "t7801@btl"] <- "קצבת נכות"
+
+
+
+#total_sessions_perday <- read_excel("C:\\Users\\elado\\Desktop\\Digital_Array\\FLOW_files\\MASTER_FLOW.xlsx", sheet = "total_sessions_perday")
+
+```
+
+
+
+
+----- FINAL FLOW DATA TAB ----
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+
+### Calculating the final FLOW score for everyone per week. ###
+
+
+summed_struggles <- strugles_data %>% group_by(formID_, Struggle_Type, week_num,  %>% date) %>% summarise(tot_strug = sum(Count))
+summed_sessions <- total_sessions_perday %>% group_by(formID_, week_num, week_start_date) %>% summarise(tot_sessions = sum(Count))
+
+joined_data <- left_join(summed_struggles, summed_sessions, by = c("formID_" = "formID_", "week_num" = "week_num","week_start_date"="week_start_date"))
+
+colnames(joined_data)[colnames(joined_data) == "tot_strug"] <- "week_strugles"
+colnames(joined_data)[colnames(joined_data) == "tot_sessions"] <- "week_sessions"
+
+
+#joined_data <- strugles_data %>% group_by()
+
+
+###THE FLOW CALCULATION FORMULA!
+
+# Calculate the number of unique struggle types
+num_struggle_types <- length(unique(joined_data$Struggle_Type)) #this results in 8.
+
+data_components <- joined_data %>% mutate(component_flow_score = (100 / num_struggle_types) * (1 - pmin(1, (1 + week_strugles) /(1 + week_sessions))))
+
+
+# Normalizing component_flow_score to the range [0, 10]
+data_components <- data_components %>%  mutate(component_flow_score_norm = (component_flow_score / (100/num_struggle_types) * 10))
+
+
+
+
+
+#Final flow DF
+final_flow_data <- data_components %>% group_by(formID_, week_num, week_start_date) %>% summarise(flow_score_tot = sum(component_flow_score))
+
+final_flow_data$week_start_year <- format(final_flow_data$week_start_date, "%Y")
+
+
+#write.xlsx(final_flow_data,"C:\\Users\\elado\\Desktop\\final_flow_data.xlsx")
+
+
+```
+
+
+
+
+---------- "NEW TIME" tab creation! ------------
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Creating the "NEW TIME" tab
+
+completion_time_data
+time_rows <- grepl("^\\d{2}:\\d{2}$", completion_time_data$duration)
+
+# Convert those values to fractional minutes
+completion_time_data$time_fraction[time_rows] <- sapply(
+  completion_time_data$duration[time_rows],
+  function(x) {
+    parts <- strsplit(x, ":")[[1]]  # Split MM and SS
+    minutes <- as.numeric(parts[1])
+    seconds <- as.numeric(parts[2])
+    minutes + (seconds / 60)  # Convert to fractional minutes
+  }
+)
+completion_time_data$date <- as.Date(completion_time_data$date, format = "%Y-%m%-d")
+
+completion_time_data$year <-  as.numeric(format(completion_time_data$date, "%Y"))
+
+
+
+
+#renaming colums
+completion_time_data <- completion_time_data %>% 
+  rename("שם הטופס" = formID_,
+         "רכיב" = Struggle_Type,
+         "משך זמן" = duration,
+         "תאריך" = date,
+         "מספר שבוע בשנה"=week_num,
+         "שנה"=year,
+         "שבוע שמתחיל ב"=week_start_date)
+completion_time_data["date_formatted"] <- completion_time_data$"תאריך"
+
+
+
+# Reordering to match the ordering in "NEW TIME"
+completion_time_data <- completion_time_data %>% 
+  select("שם הטופס", "משך זמן", "רכיב", "שם הטופס","משך זמן","תאריך","מספר שבוע בשנה","date_formatted","שנה","שבוע שמתחיל ב","time_fraction", everything())
+
+
+
+#write.xlsx(completion_time_data,"C:\\Users\\elado\\Desktop\\completion_time_data.xlsx")
+
+
+```
+
+---- DATA COMPONENTS CLEAN TAB -----
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Creatign the data_components_clean
+
+data_components_clean <- data_components
+data_components_clean
+data_components_clean$`שכיחות לפי סשן` <- data_components_clean$week_strugles/data_components_clean$week_sessions
+data_components_clean$year <-  as.numeric(format(data_components_clean$week_start_date, "%Y"))
+
+data_components_clean <- data_components_clean %>%
+  mutate(
+    Explanation = case_when(
+      Struggle_Type == "back forward" ~ "שיטוט בין דפי השירות הלוך ושוב",
+      Struggle_Type == "dead click" ~ "לחיצה על אובייקט לא לחיץ",
+      Struggle_Type == "error click" ~ "לחיצות שגיאה",
+      Struggle_Type == "form zig zag" ~ "התנהגות לא סדירה בעת מילוי הטופס",
+      Struggle_Type == "long focus time" ~ "התמקדות זמן רב בשדה מילוי בטופס",
+      Struggle_Type == "rage clicks" ~ "לחיצות רבות בפרק זמן קצר",
+      Struggle_Type == "reload" ~ "כמות הפעמים בהם המשתמש טען את הדף מחדש",
+      Struggle_Type == "slow page" ~ "זמן טעינה ארוך של הדף",
+      TRUE ~ "MEOWWWWWW"  # Default case if no match is found
+    )
+  )
+
+
+
+
+
+
+#write.xlsx(data_components_clean,"C:\\Users\\elado\\Desktop\\data_components_clean.xlsx")
+
+```
+
+
+
+
+
+
+
+---- convertion data tab ------
+
+
+```{r}
+#Time transformations
+
+
+converstion_data
+
+converstion_data$year <-  as.numeric(format(converstion_data$date, "%Y"))
+
+
+
+
+
+
+#write.xlsx(converstion_data,"C:\\Users\\elado\\Desktop\\converstion_data.xlsx")
+
+
+```
+
+
+
+
+```{r}
+
+#Importing data
+strugles_data <- read_csv("C:\\Users\\elado\\Desktop\\Digital_Array\\FLOW_files\\TTTT.csv")
+
+
+
+#Converting the 'avg time in flow' to be in seconds for later calculations:
+strugles_data$`avg time in flow` <- as.character(strugles_data$`avg time in flow`)
+
+strugles_data$`avg time in flow` <- sapply(
+  strugles_data$`avg time in flow`,
+  function(x) {
+    parts <- strsplit(x, ":")[[1]]
+    as.numeric(parts[1]) * 60 + as.numeric(parts[2])
+  }
+)
+
+
+
+#Converting data to long format
+strugles_data <- strugles_data %>%   pivot_longer(
+    cols = c(
+      "avg time in flow", "conversion", "slow page", "n_sessions",
+      "back forward", "dead click", "error click", "form zigzag",
+      "long focus time", "rage clicks", "reload"
+    ),
+    names_to = "Struggle_Type",
+    values_to = "struggle_count"
+  )
+
+
+
+#Creating a week number column
+strugles_data$date <- as.Date(format(dmy(strugles_data$date), "%d-%m-%Y"),"%d-%m-%Y")
+#strugles_data$week_start_date <- strugles_data$date - as.numeric(format(strugles_data$date, "%w"))
+
+
+
+
+strugles_data$date <- as.Date(strugles_data$date)
+strugles_data$week_start_date <- floor_date(strugles_data$date, unit = "week", week_start = 1)
+strugles_data$week_num <- week(strugles_data$week_start_date)
+
+
+
+
+
+###### Fetching and exporting just the completion time and conversion data.
+completion_time_data <- subset(strugles_data, Struggle_Type=="avg time in flow")
+converstion_data <- subset(strugles_data, Struggle_Type == "conversion")
+total_sessions_perday <- subset(strugles_data, Struggle_Type == "n_sessions")
+
+
+#Now removing them from original strugles
+strugles_data <- strugles_data[strugles_data$Struggle_Type !="avg time in seconds in flow", ]
+strugles_data<- strugles_data[strugles_data$Struggle_Type !="conversion rate",]
+strugles_data <- strugles_data[strugles_data$Struggle_Type != "n_sessions",]
+
+#Exporting these
+#write.xlsx(completion_time_data,"C:\\Users\\elado\\Desktop\\Digital_Array\\FLOW_files\\completion_time_data.xlsx")
+#write.xlsx(converstion_data,"C:\\Users\\elado\\Desktop\\Digital_Array\\FLOW_files\\convertion_data.xlsx")
+#write.xlsx(total_sessions_perday,"C:\\Users\\elado\\Desktop\\Digital_Array\\FLOW_files\\total_sessions_data.xlsx")
+
+
+
+
+
+#Creating the struggles weeky summation for each struggle
+summed_struggles <- strugles_data %>% group_by(hebrew_name, Struggle_Type, week_num,week_start_date) %>% summarise(tot_strug = sum(struggle_count))
+summed_sessions <- total_sessions_perday %>% group_by(hebrew_name, week_num, week_start_date) %>% summarise(tot_sessions = sum(struggle_count))
+
+
+
+
+
+joined_data <- left_join(summed_struggles, summed_sessions, by = c("hebrew_name" = "hebrew_name", "week_num" = "week_num","week_start_date"="week_start_date"))
+colnames(joined_data)[colnames(joined_data) == "tot_strug"] <- "week_strugles"
+colnames(joined_data)[colnames(joined_data) == "tot_sessions"] <- "week_sessions"
+
+
+
+
+
+
+
+
+
+###THE FLOW CALCULATION FORMULA!
+
+# Calculate the number of unique struggle types
+num_struggle_types <- length(unique(joined_data$Struggle_Type)) #this results in 10.
+data_components <- joined_data %>% mutate(component_flow_score = (100 / num_struggle_types) * (1 - pmin(1, (1 + week_strugles) /(1 + week_sessions))))
+
+
+# Normalizing component_flow_score to the range [0, 10]
+data_components <- data_components %>%  mutate(component_flow_score_norm = (component_flow_score / (100/num_struggle_types) * 10))
+ 
+
+
+data_components <- data_components %>%
+  mutate(
+    Explanation = case_when(
+      Struggle_Type == "back forward" ~ "שיטוט בין דפי השירות הלוך ושוב",
+      Struggle_Type == "dead click" ~ "לחיצה על אובייקט לא לחיץ",
+      Struggle_Type == "error click" ~ "לחיצות שגיאה",
+      Struggle_Type == "form zig zag" ~ "התנהגות לא סדירה בעת מילוי הטופס",
+      Struggle_Type == "long focus time" ~ "התמקדות זמן רב בשדה מילוי בטופס",
+      Struggle_Type == "rage clicks" ~ "לחיצות רבות בפרק זמן קצר",
+      Struggle_Type == "reload" ~ "כמות הפעמים בהם המשתמש טען את הדף מחדש",
+      Struggle_Type == "slow page" ~ "זמן טעינה ארוך של הדף",
+      Struggle_Type == "conversion" ~ "אחוז המרה",
+      Struggle_Type == "avg time in flow" ~ "משך שהיה בטפס",
+      Struggle_Type == "form zigzag" ~ "קפיצה לא מסודרת בין שדות הטופס",
+      TRUE ~ "MEOWWWWWW"  # Default case if no match is found
+    )
+  )
+
+
+
+
+data_components <- data_components %>%
+  mutate(
+    clusters = case_when(
+      Struggle_Type == "error click" ~ "תגובתיות לפעולות",
+      Struggle_Type == "rage clicks" ~ "תגובתיות לפעולות",
+      Struggle_Type == "reload" ~ "תגובתיות לפעולות",
+      Struggle_Type == "slow page" ~ "תגובתיות לפעולות",
+
+      Struggle_Type == "back forward" ~ "חוסר התמצאות בדף",
+      Struggle_Type == "dead click" ~ "חוסר התמצאות בדף",
+      Struggle_Type == "form zigzag" ~ "חוסר התמצאות בדף",
+      Struggle_Type == "long focus time" ~ "חוסר התמצאות בדף",
+      Struggle_Type == "avg time in flow" ~ "חוסר התמצאות בדף",
+      Struggle_Type == "conversion" ~ "חוסר התמצאות בדף",
+      TRUE ~ "Cluster Specification Not Found"  # Default case if no match is found
+    )
+  )
+
+
+
+
+#Final flow DF
+final_flow_data <- data_components %>% group_by(hebrew_name, week_num, week_start_date) %>% summarise(flow_score_tot = sum(component_flow_score))
+final_flow_data$week_start_year <- format(final_flow_data$week_start_date, "%Y")
+
+
+
+write.xlsx(strugles_data,"C:\\Users\\elado\\Desktop\\TOTAB.xlsx")
+write.xlsx(data_components,"C:\\Users\\elado\\Desktop\\data_components_TOTAB.xlsx")
+write.xlsx(final_flow_data,"C:\\Users\\elado\\Desktop\\final_flow_Scores_TOTAB.xlsx")
+
+```
